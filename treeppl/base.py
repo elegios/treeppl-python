@@ -4,9 +4,29 @@ from tempfile import TemporaryDirectory
 from subprocess import Popen, PIPE, STDOUT
 import numpy as np
 
+import shutil
+import os
+import importlib.metadata
+
 from .exceptions import CompileError, InferenceError
 from .serialization import from_json, to_json
 
+def get_tpplc_binary():
+    tpplc = shutil.which("tpplc")
+    if tpplc:
+        return tpplc
+
+    _home = os.path.expanduser('~')
+    tmp_dir = os.environ.get('TMPDIR') or '/tmp'
+    tppl_dir_path = os.path.join(tmp_dir, f"tpplc-{importlib.metadata.version('treeppl')}")
+    if not os.path.isdir(tppl_dir_path):
+        os.mkdir(tppl_dir_path)
+        with importlib.resources.path('treeppl', 'tpplc.deploy') as extract:
+            with Popen(args = [extract, "-d", tppl_dir_path]) as proc:
+                proc.wait()
+                if proc.returncode != 0:
+                    raise CompileError("Failed to extract self-contained compiler")
+    return os.path.join(tppl_dir_path, "root", "bin", "tpplc")
 
 class Model:
     def __init__(
@@ -26,7 +46,7 @@ class Model:
         with open(self.temp_dir.name + "/__main__.tppl", "w") as f:
             f.write(source)
         args = [
-            "tpplc",
+            get_tpplc_binary(),
             "__main__.tppl",
             "-m",
             method,
